@@ -5,6 +5,7 @@ Suporta múltiplas exchanges com interface unificada
 
 import asyncio
 import aiohttp
+import json
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
@@ -321,6 +322,7 @@ class BybitExchange(BaseExchange):
         }
 
     async def get_candles(self, symbol: str, timeframe: str, limit: int = 100) -> List[Candle]:
+        """Busca candles - endpoint PÚBLICO (não requer autenticação)"""
         sym = self.SYMBOL_MAP.get(symbol, symbol)
         tf = self.TIMEFRAME_MAP.get(timeframe, timeframe)
         url = f"{self.BASE_URL}/v5/market/kline"
@@ -331,26 +333,40 @@ class BybitExchange(BaseExchange):
             "limit": limit
         }
 
-        # Gerar headers de autenticação
-        headers = self._generate_signature(params)
+        # Log da requisição para debug
+        print(f"[Bybit] 📡 Requisição: {url}")
+        print(f"[Bybit] 📋 Params: category=linear, symbol={sym}, interval={tf}, limit={limit}")
 
         try:
             async with aiohttp.ClientSession() as session:
+                # Endpoint público - NÃO precisa de autenticação
                 async with session.get(
                     url,
                     params=params,
-                    headers=headers,
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
-                    if response.status == 200:
-                        data = await response.json()
+                    response_text = await response.text()
+                    print(f"[Bybit] 📨 Status: {response.status}")
 
-                        if data.get("retCode") != 0:
-                            print(f"[Bybit] ❌ API Error (code {data.get('retCode')}): {data.get('retMsg')}")
+                    if response.status == 200:
+                        data = json.loads(response_text)
+
+                        ret_code = data.get("retCode")
+                        ret_msg = data.get("retMsg", "")
+
+                        if ret_code != 0:
+                            print(f"[Bybit] ❌ API Error (code {ret_code}): {ret_msg}")
+                            return []
+
+                        result_list = data.get("result", {}).get("list", [])
+                        print(f"[Bybit] 📊 Itens recebidos: {len(result_list)}")
+
+                        if not result_list:
+                            print(f"[Bybit] ⚠️ Lista vazia! Resposta: {response_text[:500]}")
                             return []
 
                         candles = []
-                        for item in data.get("result", {}).get("list", []):
+                        for item in result_list:
                             candle = Candle(
                                 timestamp=datetime.fromtimestamp(int(item[0]) / 1000, tz=timezone.utc),
                                 open=float(item[1]),
@@ -362,15 +378,15 @@ class BybitExchange(BaseExchange):
                             candles.append(candle)
 
                         candles.sort(key=lambda x: x.timestamp)
-                        auth_status = "🔐" if self.api_key else "🔓"
-                        print(f"[Bybit] {auth_status} ✅ {len(candles)} candles recebidos para {sym}")
+                        print(f"[Bybit] ✅ {len(candles)} candles processados para {sym}")
+                        if candles:
+                            print(f"[Bybit] 💰 Último preço: ${candles[-1].close:,.2f}")
                         return candles
                     else:
-                        error_text = await response.text()
-                        print(f"[Bybit] ❌ Erro HTTP {response.status}: {error_text[:200]}")
+                        print(f"[Bybit] ❌ Erro HTTP {response.status}: {response_text[:300]}")
                         return []
         except Exception as e:
-            print(f"[Bybit] ❌ Erro de conexão: {e}")
+            print(f"[Bybit] ❌ Erro de conexão: {type(e).__name__}: {e}")
             return []
     
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
