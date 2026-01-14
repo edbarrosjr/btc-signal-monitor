@@ -5,6 +5,7 @@ Suporta múltiplas exchanges com interface unificada
 
 import asyncio
 import aiohttp
+import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
@@ -12,6 +13,8 @@ from dataclasses import dataclass
 import hmac
 import hashlib
 import time
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -73,9 +76,9 @@ class BaseExchange(ABC):
 
 class CryptoComExchange(BaseExchange):
     """Exchange Crypto.com"""
-    
+
     BASE_URL = "https://api.crypto.com/exchange/v1"
-    
+
     TIMEFRAME_MAP = {
         "1m": "1m",
         "5m": "5m",
@@ -90,12 +93,20 @@ class CryptoComExchange(BaseExchange):
         "1w": "1W",
         "1W": "1W",
     }
-    
+
+    SYMBOL_MAP = {
+        "BTCUSD-PERP": "BTC_USDT",
+        "ETHUSD-PERP": "ETH_USDT",
+        "BTCUSDT": "BTC_USDT",
+        "ETHUSDT": "ETH_USDT",
+    }
+
     async def get_candles(self, symbol: str, timeframe: str, limit: int = 100) -> List[Candle]:
+        sym = self.SYMBOL_MAP.get(symbol, symbol)
         tf = self.TIMEFRAME_MAP.get(timeframe, timeframe)
         url = f"{self.BASE_URL}/public/get-candlestick"
         params = {
-            "instrument_name": symbol,
+            "instrument_name": sym,
             "timeframe": tf
         }
         
@@ -103,16 +114,25 @@ class CryptoComExchange(BaseExchange):
             async with session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
+                    api_code = data.get("code")
+                    if api_code and api_code != 0:
+                        logger.warning(f"Crypto.com API error: code={api_code}, symbol={sym}")
+                        return []
+
                     candles = []
-                    
-                    for item in data.get("result", {}).get("data", []):
+                    raw_data = data.get("result", {}).get("data", [])
+
+                    if not raw_data:
+                        logger.warning(f"Crypto.com returned empty data for {sym}/{tf}")
+
+                    for item in raw_data:
                         try:
                             ts = item.get("timestamp", item.get("t"))
                             if isinstance(ts, str):
                                 timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00"))
                             else:
                                 timestamp = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-                            
+
                             candle = Candle(
                                 timestamp=timestamp,
                                 open=float(item.get("open", item.get("o"))),
@@ -123,16 +143,19 @@ class CryptoComExchange(BaseExchange):
                             )
                             candles.append(candle)
                         except Exception as e:
+                            logger.debug(f"Failed to parse candle: {e}")
                             continue
-                    
+
                     candles.sort(key=lambda x: x.timestamp)
                     return candles[-limit:]
-                
+
+                logger.warning(f"Crypto.com API returned status {response.status} for {sym}")
                 return []
     
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
+        sym = self.SYMBOL_MAP.get(symbol, symbol)
         url = f"{self.BASE_URL}/public/get-ticker"
-        params = {"instrument_name": symbol}
+        params = {"instrument_name": sym}
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params) as response:
@@ -151,8 +174,9 @@ class CryptoComExchange(BaseExchange):
                 return {}
     
     async def get_orderbook(self, symbol: str, depth: int = 10) -> Dict[str, Any]:
+        sym = self.SYMBOL_MAP.get(symbol, symbol)
         url = f"{self.BASE_URL}/public/get-book"
-        params = {"instrument_name": symbol, "depth": depth}
+        params = {"instrument_name": sym, "depth": depth}
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params) as response:
