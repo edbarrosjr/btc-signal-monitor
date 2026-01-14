@@ -264,9 +264,9 @@ class BinanceExchange(BaseExchange):
 
 class BybitExchange(BaseExchange):
     """Exchange Bybit"""
-    
+
     BASE_URL = "https://api.bybit.com"
-    
+
     TIMEFRAME_MAP = {
         "1m": "1",
         "5m": "5",
@@ -278,12 +278,20 @@ class BybitExchange(BaseExchange):
         "1D": "D",
         "1w": "W",
     }
-    
+
     SYMBOL_MAP = {
+        # Formatos comuns -> símbolo Bybit
         "BTCUSD-PERP": "BTCUSDT",
+        "BTCUSDT": "BTCUSDT",
+        "BTCUSDT.P": "BTCUSDT",
+        "BTC/USDT": "BTCUSDT",
+        "BTC-USDT": "BTCUSDT",
+        "BTCUSDTPERP": "BTCUSDT",
         "ETHUSD-PERP": "ETHUSDT",
+        "ETHUSDT": "ETHUSDT",
+        "ETHUSDT.P": "ETHUSDT",
     }
-    
+
     async def get_candles(self, symbol: str, timeframe: str, limit: int = 100) -> List[Candle]:
         sym = self.SYMBOL_MAP.get(symbol, symbol)
         tf = self.TIMEFRAME_MAP.get(timeframe, timeframe)
