@@ -31,8 +31,8 @@ except ImportError:
 # Adicionar src ao path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.exchanges import get_exchange, Candle
-from src.config import load_config, TRADING_PRESETS
+from exchanges import get_exchange, Candle
+from config import load_config, TRADING_PRESETS
 
 # Configuração de logging
 logging.basicConfig(
