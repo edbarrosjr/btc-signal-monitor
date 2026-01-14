@@ -689,8 +689,11 @@ class BTCMonitor:
         self.timeframe = config.get("timeframe", "1h")
         self.interval = config.get("check_interval", 60)
         self.cooldown = config.get("signal_cooldown", 3600)
-        
-        self.exchange = get_exchange(config.get("exchange", {}).get("name", "binance"))
+
+        exchange_name = config.get("exchange", {}).get("name", "binance")
+        self.exchange = get_exchange(exchange_name)
+        logger.info(f"📡 Exchange configurada: {exchange_name.upper()}")
+
         self.notifier = SignalNotifier(config.get("notifications", {}))
         self.trading = config.get("trading", {})
         
