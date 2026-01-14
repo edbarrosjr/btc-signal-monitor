@@ -612,12 +612,20 @@ class TelegramBot:
 
     async def _get_market_data(self) -> Dict:
         """Busca dados de mercado para análise"""
-        candles = await self.monitor.exchange.get_candles(
-            self.monitor.symbol, self.monitor.timeframe, 100
-        )
+        try:
+            candles = await self.monitor.exchange.get_candles(
+                self.monitor.symbol, self.monitor.timeframe, 100
+            )
+        except Exception as e:
+            raise Exception(f"Erro ao conectar na exchange: {e}")
 
-        if not candles or len(candles) < 50:
-            raise Exception("Dados insuficientes")
+        if not candles:
+            raise Exception(f"Exchange não retornou dados para {self.monitor.symbol}")
+
+        if len(candles) < 20:
+            raise Exception(f"Apenas {len(candles)} candles recebidos (mínimo: 20)")
+
+        logger.info(f"📊 Dados recebidos: {len(candles)} candles | Preço: ${candles[-1].close:,.2f}")
 
         price = candles[-1].close
         closes = [c.close for c in candles]
