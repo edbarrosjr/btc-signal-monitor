@@ -77,6 +77,18 @@ def load_config() -> Dict[str, Any]:
             "name": os.getenv("EXCHANGE", "cryptocom"),  # cryptocom, binance, bybit
             "api_key": os.getenv("EXCHANGE_API_KEY"),
             "api_secret": os.getenv("EXCHANGE_API_SECRET"),
+        },
+
+        # ============================================================
+        # CONFIGURAÇÃO DE AI (para análises sob demanda)
+        # ============================================================
+        "ai": {
+            # OpenAI API Key - https://platform.openai.com/api-keys
+            "openai_api_key": os.getenv("OPENAI_API_KEY"),
+            # Modelo a usar (gpt-4o-mini é mais barato, gpt-4o é mais preciso)
+            "model": os.getenv("AI_MODEL", "gpt-4o-mini"),
+            # Habilitar comandos do Telegram
+            "telegram_commands_enabled": os.getenv("TELEGRAM_COMMANDS_ENABLED", "true").lower() == "true",
         }
     }
 
