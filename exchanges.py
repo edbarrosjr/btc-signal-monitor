@@ -138,7 +138,8 @@ class CryptoComExchange(BaseExchange):
             async with session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    result = data.get("result", {}).get("data", [{}])[0]
+                    data_list = data.get("result", {}).get("data", [])
+                    result = data_list[0] if data_list else {}
                     return {
                         "symbol": symbol,
                         "last": float(result.get("a", 0)),
@@ -157,7 +158,8 @@ class CryptoComExchange(BaseExchange):
             async with session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    result = data.get("result", {}).get("data", [{}])[0]
+                    data_list = data.get("result", {}).get("data", [])
+                    result = data_list[0] if data_list else {}
                     return {
                         "bids": [(float(b["price"]), float(b["qty"])) for b in result.get("bids", [])],
                         "asks": [(float(a["price"]), float(a["qty"])) for a in result.get("asks", [])]
@@ -315,7 +317,8 @@ class BybitExchange(BaseExchange):
             async with session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    result = data.get("result", {}).get("list", [{}])[0]
+                    data_list = data.get("result", {}).get("list", [])
+                    result = data_list[0] if data_list else {}
                     return {
                         "symbol": symbol,
                         "last": float(result.get("lastPrice", 0)),
