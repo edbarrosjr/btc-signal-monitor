@@ -13,8 +13,10 @@ def load_config() -> Dict[str, Any]:
         # ============================================================
         # CONFIGURAÇÃO DO ATIVO
         # ============================================================
-        "symbol": os.getenv("SYMBOL", "BTCUSD-PERP"),
-        "timeframe": os.getenv("TIMEFRAME", "1h"),  # 1h, 4h, 1D
+        # Para Supabase: BTCUSDT (spot) ou BTCUSDT.P (futuros)
+        # Para exchanges: BTCUSD-PERP, BTCUSDT, etc
+        "symbol": os.getenv("SYMBOL", "BTCUSDT"),
+        "timeframe": os.getenv("TIMEFRAME", "4h"),  # 1h, 4h, 1d
         
         # ============================================================
         # CONFIGURAÇÃO DE MONITORAMENTO
@@ -71,12 +73,25 @@ def load_config() -> Dict[str, Any]:
         },
         
         # ============================================================
-        # CONFIGURAÇÃO DE EXCHANGE
+        # CONFIGURAÇÃO DE EXCHANGE (fallback se Supabase não configurado)
         # ============================================================
         "exchange": {
             "name": os.getenv("EXCHANGE", "cryptocom"),  # cryptocom, binance, bybit
             "api_key": os.getenv("EXCHANGE_API_KEY"),
             "api_secret": os.getenv("EXCHANGE_API_SECRET"),
+        },
+
+        # ============================================================
+        # CONFIGURAÇÃO DO SUPABASE (API de Análise - RECOMENDADO)
+        # Usa a API de análise completa em vez de cálculos locais
+        # ============================================================
+        "supabase": {
+            # URL do projeto Supabase
+            "url": os.getenv("SUPABASE_URL", "https://pjbfgjhkqsdcwfvvxdic.supabase.co"),
+            # Anon Key do Supabase (público)
+            "anon_key": os.getenv("SUPABASE_ANON_KEY"),
+            # Usar API do Supabase em vez de exchange local
+            "enabled": os.getenv("USE_SUPABASE_API", "true").lower() == "true",
         },
 
         # ============================================================

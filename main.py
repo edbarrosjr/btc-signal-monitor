@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from exchanges import get_exchange, Candle
 from config import load_config, TRADING_PRESETS
+from supabase_client import SupabaseAnalyzer, create_supabase_analyzer, MarketAnalysis
 
 # Configuração de logging
 logging.basicConfig(
@@ -435,16 +436,19 @@ Forneça uma análise completa e recomendação."""
 class TelegramBot:
     """Bot do Telegram para receber comandos"""
 
-    def __init__(self, config: Dict, monitor: 'BTCMonitor', analyzer: AIAnalyzer):
+    def __init__(self, config: Dict, monitor: 'BTCMonitor', analyzer: AIAnalyzer, supabase: SupabaseAnalyzer = None):
         self.token = config.get("notifications", {}).get("telegram_token")
         self.chat_id = config.get("notifications", {}).get("telegram_chat_id")
         self.enabled = config.get("ai", {}).get("telegram_commands_enabled", True)
         self.monitor = monitor
         self.analyzer = analyzer
+        self.supabase = supabase
+        self.use_supabase = config.get("supabase", {}).get("enabled", False) and supabase is not None
         self.last_update_id = 0
 
         if self.token and self.enabled:
-            logger.info("🤖 Telegram Bot inicializado - Comandos habilitados")
+            mode = "Supabase API" if self.use_supabase else "Local"
+            logger.info(f"🤖 Telegram Bot inicializado - Modo: {mode}")
 
     async def send_message(self, text: str, chat_id: str = None) -> bool:
         """Envia mensagem para o Telegram"""
@@ -512,20 +516,127 @@ class TelegramBot:
 
     async def _handle_analysis(self, chat_id: str) -> None:
         """Gera análise completa com AI"""
-        await self.send_message("🔄 Gerando análise com AI...", chat_id)
+        source = "Supabase API" if self.use_supabase else "local"
+        await self.send_message(f"🔄 Gerando análise ({source})...", chat_id)
 
         try:
             # Buscar dados atuais
             market_data = await self._get_market_data()
 
-            # Gerar análise
-            analysis = await self.analyzer.analyze(market_data)
+            # Se veio do Supabase, já temos análise completa
+            if market_data.get("from_supabase") and market_data.get("ai_summary"):
+                analysis = self._format_supabase_analysis(market_data)
+            else:
+                # Fallback: usar AI local (OpenAI)
+                analysis = await self.analyzer.analyze(market_data)
 
             await self.send_message(analysis, chat_id)
 
         except Exception as e:
             logger.error(f"❌ Erro na análise: {e}")
             await self.send_message(f"❌ Erro ao gerar análise: {e}", chat_id)
+
+    def _format_supabase_analysis(self, data: Dict) -> str:
+        """Formata análise do Supabase para mensagem do Telegram"""
+        price = data.get("price", 0)
+        symbol = data.get("symbol", "BTC")
+        timeframe = data.get("timeframe", "4h")
+
+        # Bias e tendência
+        bias = data.get("bias", "neutral")
+        bias_emoji = "🟢" if bias == "bullish" else "🔴" if bias == "bearish" else "⚪"
+        bias_text = {"bullish": "ALTA", "bearish": "BAIXA", "neutral": "NEUTRO"}.get(bias, "NEUTRO")
+
+        # RSI
+        rsi = data.get("rsi", 50)
+        if rsi < 30:
+            rsi_status = "🟢 Sobrevendido"
+        elif rsi > 70:
+            rsi_status = "🔴 Sobrecomprado"
+        elif rsi < 50:
+            rsi_status = "🟡 Zona de suporte"
+        else:
+            rsi_status = "⚪ Neutro"
+
+        # Confidence
+        confidence = data.get("confidence", 0)
+        grade = data.get("confidence_grade", "F")
+
+        # Trade Plan
+        side = data.get("side")
+        entry = data.get("entry_min", 0)
+        stop = data.get("stop_loss", 0)
+        tp1 = data.get("tp1", 0)
+        tp2 = data.get("tp2", 0)
+        tp3 = data.get("tp3", 0)
+        rr = data.get("risk_reward", 0)
+        setup = data.get("setup", "")
+
+        # ADX
+        adx = data.get("adx", 0)
+        adx_trend = data.get("adx_trend", "weak")
+
+        # Divergência
+        divergence = data.get("divergence")
+
+        # Condições
+        conditions = data.get("conditions", [])
+
+        # AI Summary
+        ai_summary = data.get("ai_summary", "")
+
+        # Montar mensagem
+        message = f"""
+📊 **ANÁLISE DE MERCADO** | {symbol} ({timeframe})
+
+💰 **Preço:** ${price:,.2f}
+
+{bias_emoji} **Viés:** {bias_text}
+📈 **Padrão:** {data.get('pattern', '-')}
+
+📉 **RSI:** {rsi:.1f} - {rsi_status}
+📊 **ADX:** {adx:.1f} ({adx_trend})
+📦 **Volume:** {data.get('volume_ratio', 1):.1f}x média
+"""
+
+        if divergence:
+            message += f"⚡ **Divergência:** {divergence}\n"
+
+        message += f"""
+🎯 **Confiança:** {confidence}% (Grade {grade})
+
+✅ **Condições ({len(conditions)}):**
+{chr(10).join(['  • ' + c for c in conditions]) if conditions else '  • Nenhuma'}
+"""
+
+        if side:
+            side_emoji = "🟢" if side == "long" else "🔴"
+            message += f"""
+{side_emoji} **TRADE PLAN** ({side.upper()})
+📍 Entry: ${entry:,.2f}
+🛑 Stop: ${stop:,.2f}
+🎯 TP1: ${tp1:,.2f}
+"""
+            if tp2:
+                message += f"🎯 TP2: ${tp2:,.2f}\n"
+            if tp3:
+                message += f"🎯 TP3: ${tp3:,.2f}\n"
+
+            message += f"📐 R/R: {rr:.2f}\n"
+            message += f"⚙️ Setup: {setup}\n"
+
+        if ai_summary:
+            # Truncar se muito longo
+            summary = ai_summary[:500] + "..." if len(ai_summary) > 500 else ai_summary
+            message += f"""
+💡 **Análise AI:**
+{summary}
+"""
+
+        message += f"""
+⏰ {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}
+"""
+        return message
 
     async def _handle_setup(self, chat_id: str) -> None:
         """Mostra configuração atual do setup"""
@@ -577,11 +688,27 @@ class TelegramBot:
     async def _handle_price(self, chat_id: str) -> None:
         """Mostra preço atual"""
         try:
-            candles = await self.monitor.exchange.get_candles(
-                self.monitor.symbol, self.monitor.timeframe, 1
-            )
-            if candles:
-                price = candles[-1].close
+            price = None
+
+            # Tentar Supabase primeiro
+            if self.use_supabase and self.supabase:
+                analysis = await self.supabase.analyze_market(
+                    symbol=self.monitor.symbol,
+                    timeframe=self.monitor.timeframe,
+                    limit=10  # Mínimo para preço
+                )
+                if analysis:
+                    price = analysis.current_price
+
+            # Fallback para exchange local
+            if price is None:
+                candles = await self.monitor.exchange.get_candles(
+                    self.monitor.symbol, self.monitor.timeframe, 1
+                )
+                if candles:
+                    price = candles[-1].close
+
+            if price:
                 message = f"💰 **{self.monitor.symbol}**\n\nPreço: ${price:,.2f}\n\n⏰ {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
             else:
                 message = "❌ Não foi possível obter o preço"
@@ -614,6 +741,92 @@ class TelegramBot:
 
     async def _get_market_data(self) -> Dict:
         """Busca dados de mercado para análise"""
+
+        # Usar Supabase API se disponível
+        if self.use_supabase and self.supabase:
+            return await self._get_market_data_supabase()
+
+        # Fallback para análise local
+        return await self._get_market_data_local()
+
+    async def _get_market_data_supabase(self) -> Dict:
+        """Busca dados via Supabase API (recomendado)"""
+        analysis = await self.supabase.analyze_market(
+            symbol=self.monitor.symbol,
+            timeframe=self.monitor.timeframe,
+            limit=500
+        )
+
+        if not analysis:
+            raise Exception("Falha ao obter análise do Supabase")
+
+        # Montar condições a partir dos dados
+        conditions = []
+
+        # Bias/Estrutura
+        if analysis.bias == "bullish":
+            conditions.append(f"Estrutura de alta: {analysis.pattern}")
+        elif analysis.bias == "bearish":
+            conditions.append(f"Estrutura de baixa: {analysis.pattern}")
+
+        # RSI
+        if 30 <= analysis.rsi14 <= 50:
+            conditions.append(f"RSI em zona de suporte ({analysis.rsi14:.1f})")
+        elif analysis.rsi14 < 30:
+            conditions.append(f"RSI sobrevendido ({analysis.rsi14:.1f})")
+
+        # ADX/Tendência
+        if analysis.adx > 25:
+            conditions.append(f"Tendência {analysis.adx_trend}: ADX {analysis.adx:.1f}")
+
+        # Volume
+        if analysis.is_volume_spike:
+            conditions.append(f"Volume spike ({analysis.relative_volume:.1f}x)")
+        elif analysis.relative_volume > 1.2:
+            conditions.append(f"Volume acima da média ({analysis.relative_volume:.1f}x)")
+
+        # Divergência
+        if analysis.divergence_type:
+            conditions.append(f"Divergência: {analysis.divergence_type}")
+
+        # Trade plan
+        if analysis.side:
+            conditions.append(f"Setup: {analysis.setup}")
+
+        return {
+            "symbol": analysis.symbol,
+            "timeframe": analysis.timeframe,
+            "price": analysis.current_price,
+            "rsi": analysis.rsi14,
+            "sma7": analysis.ma20,  # MA20 como proxy
+            "sma21": analysis.ma50,  # MA50 como proxy
+            "sma50": analysis.ma200,
+            "pattern": analysis.pattern,
+            "volume_ratio": analysis.relative_volume,
+            "conditions": conditions,
+            "conditions_count": len(conditions),
+            "confidence": analysis.confidence_score,
+            "confidence_grade": analysis.confidence_grade,
+            "entry_min": analysis.entry or 0,
+            "entry_max": analysis.entry or 0,
+            "stop_loss": analysis.stop or 0,
+            "tp1": analysis.targets[0] if len(analysis.targets) > 0 else 0,
+            "tp2": analysis.targets[1] if len(analysis.targets) > 1 else 0,
+            "tp3": analysis.targets[2] if len(analysis.targets) > 2 else 0,
+            "bias": analysis.bias,
+            "side": analysis.side,
+            "setup": analysis.setup,
+            "risk_reward": analysis.risk_reward,
+            "adx": analysis.adx,
+            "adx_trend": analysis.adx_trend,
+            "ai_summary": analysis.ai_summary,
+            "divergence": analysis.divergence_type,
+            "levels": analysis.levels,
+            "from_supabase": True,
+        }
+
+    async def _get_market_data_local(self) -> Dict:
+        """Busca dados via exchange local (fallback)"""
         candles = await self.monitor.exchange.get_candles(
             self.monitor.symbol, self.monitor.timeframe, 100
         )
@@ -657,6 +870,7 @@ class TelegramBot:
             "stop_loss": self.monitor.trading.get("stop_loss", 0),
             "tp1": self.monitor.trading.get("tp1", 0),
             "tp2": self.monitor.trading.get("tp2", 0),
+            "from_supabase": False,
         }
 
     async def poll(self) -> None:
@@ -879,9 +1093,16 @@ async def main():
     # Iniciar monitor
     monitor = BTCMonitor(config)
 
+    # Iniciar Supabase Analyzer (se configurado)
+    supabase = create_supabase_analyzer(config)
+    if supabase and config.get("supabase", {}).get("enabled", False):
+        logger.info("🔗 Supabase API habilitada - usando análise remota")
+    else:
+        logger.info("📊 Usando análise local (exchange)")
+
     # Iniciar AI Analyzer e Telegram Bot
     analyzer = AIAnalyzer(config)
-    telegram_bot = TelegramBot(config, monitor, analyzer)
+    telegram_bot = TelegramBot(config, monitor, analyzer, supabase)
 
     await monitor.run(telegram_bot)
 
