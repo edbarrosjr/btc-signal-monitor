@@ -283,35 +283,30 @@ class SignalNotifier:
 
 
 class AIAnalyzer:
-    """Analisador de mercado usando AI"""
+    """Analisador de mercado usando Claude (Anthropic)"""
 
     def __init__(self, config: Dict):
-        self.api_key = config.get("ai", {}).get("openai_api_key")
-        self.model = config.get("ai", {}).get("model", "gpt-4o-mini")
+        self.api_key = config.get("ai", {}).get("anthropic_api_key")
+        self.model = config.get("ai", {}).get("model", "claude-3-haiku-20240307")
         self.client = None
 
         if self.api_key:
             try:
-                from openai import AsyncOpenAI
-                self.client = AsyncOpenAI(api_key=self.api_key)
-                logger.info("✅ AI Analyzer inicializado")
+                from anthropic import AsyncAnthropic
+                self.client = AsyncAnthropic(api_key=self.api_key)
+                logger.info(f"✅ Claude AI Analyzer inicializado (modelo: {self.model})")
             except ImportError:
-                logger.warning("⚠️ OpenAI não instalado. AI desabilitado.")
+                logger.warning("⚠️ Anthropic não instalado. AI desabilitado.")
 
     async def analyze(self, market_data: Dict) -> str:
-        """Gera análise de mercado usando AI"""
+        """Gera análise de mercado usando Claude"""
         if not self.client:
             return self._fallback_analysis(market_data)
 
         try:
             prompt = self._build_prompt(market_data)
 
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """Você é um analista técnico de criptomoedas experiente.
+            system_prompt = """Você é um analista técnico de criptomoedas experiente.
 Analise os dados de mercado fornecidos e dê uma opinião clara e objetiva sobre:
 1. Tendência atual (alta/baixa/lateral)
 2. Força do movimento
@@ -320,20 +315,23 @@ Analise os dados de mercado fornecidos e dê uma opinião clara e objetiva sobre
 5. Pontos de atenção
 
 Seja direto e use emojis para facilitar a leitura. Responda em português."""
-                    },
+
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=800,
+                system=system_prompt,
+                messages=[
                     {
                         "role": "user",
                         "content": prompt
                     }
-                ],
-                max_tokens=800,
-                temperature=0.7
+                ]
             )
 
-            return response.choices[0].message.content
+            return response.content[0].text
 
         except Exception as e:
-            logger.error(f"❌ Erro na análise AI: {e}")
+            logger.error(f"❌ Erro na análise Claude: {e}")
             return self._fallback_analysis(market_data)
 
     def _build_prompt(self, data: Dict) -> str:

@@ -83,10 +83,11 @@ def load_config() -> Dict[str, Any]:
         # CONFIGURAÇÃO DE AI (para análises sob demanda)
         # ============================================================
         "ai": {
-            # OpenAI API Key - https://platform.openai.com/api-keys
-            "openai_api_key": os.getenv("OPENAI_API_KEY"),
-            # Modelo a usar (gpt-4o-mini é mais barato, gpt-4o é mais preciso)
-            "model": os.getenv("AI_MODEL", "gpt-4o-mini"),
+            # Anthropic API Key - https://console.anthropic.com/api-keys
+            "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY"),
+            # Modelo Claude a usar (haiku é mais barato, sonnet é mais preciso)
+            # Opções: claude-3-haiku-20240307, claude-3-sonnet-20240229, claude-3-5-sonnet-20241022
+            "model": os.getenv("AI_MODEL", "claude-3-haiku-20240307"),
             # Habilitar comandos do Telegram
             "telegram_commands_enabled": os.getenv("TELEGRAM_COMMANDS_ENABLED", "true").lower() == "true",
         }
