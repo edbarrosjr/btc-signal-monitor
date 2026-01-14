@@ -166,10 +166,10 @@ class CryptoComExchange(BaseExchange):
 
 
 class BinanceExchange(BaseExchange):
-    """Exchange Binance Futures"""
-    
-    BASE_URL = "https://fapi.binance.com"
-    
+    """Exchange Binance Spot (API pública)"""
+
+    BASE_URL = "https://api.binance.com"
+
     TIMEFRAME_MAP = {
         "1m": "1m",
         "5m": "5m",
@@ -181,16 +181,18 @@ class BinanceExchange(BaseExchange):
         "1D": "1d",
         "1w": "1w",
     }
-    
+
     SYMBOL_MAP = {
         "BTCUSD-PERP": "BTCUSDT",
+        "BTCUSDT": "BTCUSDT",
         "ETHUSD-PERP": "ETHUSDT",
+        "ETHUSDT": "ETHUSDT",
     }
-    
+
     async def get_candles(self, symbol: str, timeframe: str, limit: int = 100) -> List[Candle]:
         sym = self.SYMBOL_MAP.get(symbol, symbol)
         tf = self.TIMEFRAME_MAP.get(timeframe, timeframe)
-        url = f"{self.BASE_URL}/fapi/v1/klines"
+        url = f"{self.BASE_URL}/api/v3/klines"
         params = {
             "symbol": sym,
             "interval": tf,
@@ -224,10 +226,10 @@ class BinanceExchange(BaseExchange):
         except Exception as e:
             print(f"[Binance] ❌ Erro de conexão: {e}")
             return []
-    
+
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
         sym = self.SYMBOL_MAP.get(symbol, symbol)
-        url = f"{self.BASE_URL}/fapi/v1/ticker/24hr"
+        url = f"{self.BASE_URL}/api/v3/ticker/24hr"
         params = {"symbol": sym}
         
         async with aiohttp.ClientSession() as session:
