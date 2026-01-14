@@ -263,7 +263,7 @@ class BinanceExchange(BaseExchange):
 
 
 class BybitExchange(BaseExchange):
-    """Exchange Bybit"""
+    """Exchange Bybit com autenticação"""
 
     BASE_URL = "https://api.bybit.com"
 
@@ -292,6 +292,34 @@ class BybitExchange(BaseExchange):
         "ETHUSDT.P": "ETHUSDT",
     }
 
+    def _generate_signature(self, params: Dict[str, Any]) -> Dict[str, str]:
+        """Gera assinatura para autenticação Bybit V5"""
+        if not self.api_key or not self.api_secret:
+            return {}
+
+        timestamp = str(int(time.time() * 1000))
+        recv_window = "5000"
+
+        # Ordenar parâmetros e criar query string
+        param_str = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
+
+        # String para assinar: timestamp + api_key + recv_window + param_str
+        sign_str = f"{timestamp}{self.api_key}{recv_window}{param_str}"
+
+        # Gerar HMAC SHA256
+        signature = hmac.new(
+            self.api_secret.encode('utf-8'),
+            sign_str.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+
+        return {
+            "X-BAPI-API-KEY": self.api_key,
+            "X-BAPI-TIMESTAMP": timestamp,
+            "X-BAPI-SIGN": signature,
+            "X-BAPI-RECV-WINDOW": recv_window,
+        }
+
     async def get_candles(self, symbol: str, timeframe: str, limit: int = 100) -> List[Candle]:
         sym = self.SYMBOL_MAP.get(symbol, symbol)
         tf = self.TIMEFRAME_MAP.get(timeframe, timeframe)
@@ -303,14 +331,22 @@ class BybitExchange(BaseExchange):
             "limit": limit
         }
 
+        # Gerar headers de autenticação
+        headers = self._generate_signature(params)
+
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                async with session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
                     if response.status == 200:
                         data = await response.json()
 
                         if data.get("retCode") != 0:
-                            print(f"[Bybit] ❌ API Error: {data.get('retMsg')}")
+                            print(f"[Bybit] ❌ API Error (code {data.get('retCode')}): {data.get('retMsg')}")
                             return []
 
                         candles = []
@@ -326,7 +362,8 @@ class BybitExchange(BaseExchange):
                             candles.append(candle)
 
                         candles.sort(key=lambda x: x.timestamp)
-                        print(f"[Bybit] ✅ {len(candles)} candles recebidos para {sym}")
+                        auth_status = "🔐" if self.api_key else "🔓"
+                        print(f"[Bybit] {auth_status} ✅ {len(candles)} candles recebidos para {sym}")
                         return candles
                     else:
                         error_text = await response.text()
