@@ -294,27 +294,39 @@ class BybitExchange(BaseExchange):
             "interval": tf,
             "limit": limit
         }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    candles = []
-                    
-                    for item in data.get("result", {}).get("list", []):
-                        candle = Candle(
-                            timestamp=datetime.fromtimestamp(int(item[0]) / 1000, tz=timezone.utc),
-                            open=float(item[1]),
-                            high=float(item[2]),
-                            low=float(item[3]),
-                            close=float(item[4]),
-                            volume=float(item[5])
-                        )
-                        candles.append(candle)
-                    
-                    candles.sort(key=lambda x: x.timestamp)
-                    return candles
-                return []
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        data = await response.json()
+
+                        if data.get("retCode") != 0:
+                            print(f"[Bybit] ❌ API Error: {data.get('retMsg')}")
+                            return []
+
+                        candles = []
+                        for item in data.get("result", {}).get("list", []):
+                            candle = Candle(
+                                timestamp=datetime.fromtimestamp(int(item[0]) / 1000, tz=timezone.utc),
+                                open=float(item[1]),
+                                high=float(item[2]),
+                                low=float(item[3]),
+                                close=float(item[4]),
+                                volume=float(item[5])
+                            )
+                            candles.append(candle)
+
+                        candles.sort(key=lambda x: x.timestamp)
+                        print(f"[Bybit] ✅ {len(candles)} candles recebidos para {sym}")
+                        return candles
+                    else:
+                        error_text = await response.text()
+                        print(f"[Bybit] ❌ Erro HTTP {response.status}: {error_text[:200]}")
+                        return []
+        except Exception as e:
+            print(f"[Bybit] ❌ Erro de conexão: {e}")
+            return []
     
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
         sym = self.SYMBOL_MAP.get(symbol, symbol)
